@@ -1,0 +1,13 @@
+{
+  "name": "briefing-sharepoint-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "serve": "npx serve public",
+    "supabase:functions:serve": "supabase functions serve upload-sharepoint --env-file .env",
+    "supabase:functions:deploy": "supabase functions deploy upload-sharepoint"
+  },
+  "devDependencies": {
+    "serve": "latest"
+  }
+}
