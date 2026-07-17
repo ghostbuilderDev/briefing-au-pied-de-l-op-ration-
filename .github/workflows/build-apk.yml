@@ -179,8 +179,8 @@ jobs:
             echo " RAPPORT DIAGNOSTIC HTML VERS APK"
             echo "============================================================"
             echo "Application : Briefing au pied de l'opération"
-            echo "Package     : dev.ghostbuilderdev.briefingaupieddelopration.briefingaupieddeloperation.a01vu0uz"
-            echo "Version     : 1.0.1 (206464430)"
+            echo "Package     : dev.utilisateur.depot.briefingaupieddeloperation.a1wtgn1w"
+            echo "Version     : 1.0.1 (206465991)"
             echo "Date UTC    : $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
             echo "Dépôt       : ${{ github.repository }}"
             echo "Branche     : ${{ github.ref_name }}"
@@ -350,13 +350,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p apk-output
-          APK_FILE="apk-output/Briefing-au-pied-de-l-operation-dev.ghostbuilderdev.briefingaupieddelopration.briefingaupieddeloperation.a01vu0uz-v206464430-debug.apk"
+          APK_FILE="apk-output/Briefing-au-pied-de-l-operation-dev.utilisateur.depot.briefingaupieddeloperation.a1wtgn1w-v206465991-debug.apk"
           cp generated/app/build/outputs/apk/debug/app-debug.apk "$APK_FILE"
 
           {
             echo "APK=$APK_FILE"
-            echo "PACKAGE_ATTENDU=dev.ghostbuilderdev.briefingaupieddelopration.briefingaupieddeloperation.a01vu0uz"
-            echo "VERSION_CODE_ATTENDU=206464430"
+            echo "PACKAGE_ATTENDU=dev.utilisateur.depot.briefingaupieddeloperation.a1wtgn1w"
+            echo "VERSION_CODE_ATTENDU=206465991"
             echo "SHA256=$(sha256sum "$APK_FILE" | awk '{print $1}')"
             "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK_FILE" | head -n 8
             "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK_FILE"
@@ -365,8 +365,8 @@ jobs:
           ACTUAL_PACKAGE=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK_FILE" | awk -F"'" '/^package: name=/{print $2; exit}')
           ACTUAL_VERSION=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK_FILE" | awk -F"'" '/^package: name=/{print $4; exit}')
 
-          [ "$ACTUAL_PACKAGE" = "dev.ghostbuilderdev.briefingaupieddelopration.briefingaupieddeloperation.a01vu0uz" ] || exit 1
-          [ "$ACTUAL_VERSION" = "206464430" ] || exit 1
+          [ "$ACTUAL_PACKAGE" = "dev.utilisateur.depot.briefingaupieddeloperation.a1wtgn1w" ] || exit 1
+          [ "$ACTUAL_VERSION" = "206465991" ] || exit 1
 
       - name: Publier l’APK comme artefact
         if: success()
