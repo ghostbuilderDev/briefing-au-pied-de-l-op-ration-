@@ -1,8 +1,8 @@
 {
   "name": "Briefing au pied de l’opération",
   "short_name": "Briefing",
-  "description": "Application PWA briefing au pied de l’opération avec export WhatsApp.",
-  "start_url": "./index.html?v=whatsapp1",
+  "description": "Briefing chantier avec signatures, PDF local et partage Android/WhatsApp.",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

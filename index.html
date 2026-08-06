@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Briefing au pied de l’opération — Nos vies, notre priorité</title>
+<script src="vendor/html2canvas.min.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
 <style>
 :root{--red:#c40000;--blue:#28709b;--green:#e6f4df;--lightblue:#e6f3fb;--border:#111}
 *{box-sizing:border-box}
@@ -1143,7 +1145,7 @@ color:#666;
       Si le PDF a bien été enregistré sur le téléphone, les signatures doivent être purgées pour confidentialité.
     </div>
     <div class="pdf-finalisation-warning-v67">
-      Android ne permet pas à une page HTML de détecter automatiquement si le bouton « OK / Enregistrer » du système a réellement été validé.
+      Le navigateur ne peut pas confirmer automatiquement que le fichier a été conservé dans le téléphone.
     </div>
     <div class="pdf-finalisation-actions-v67">
       <button type="button" class="pdf-finalisation-purge-v67" onclick="confirmPdfSavedAndPurgeV67()">
@@ -7688,6 +7690,37 @@ window.updateLamBriefing=function(){let target=document.getElementById("oMiseVoi
     setTimeout(()=>show("pdfFinalisationOverlayV67"), 200);
   }
 
+  function pdfFilename(){
+    const clean = function(value){
+      return String(value || "briefing")
+        .trim()
+        .replace(/[\\\\/:*?\"<>|]+/g, "_")
+        .replace(/\s+/g, "_")
+        .slice(0, 80) || "briefing";
+    };
+    const chantier = byId("chantier")?.value || "chantier";
+    const date = byId("date")?.value || new Date().toISOString().slice(0,10);
+    return "Briefing_" + clean(date) + "_" + clean(chantier) + ".pdf";
+  }
+
+  // Dans l'APK, le pont Android sait si le PDF a vraiment été enregistré.
+  // Les signatures ne sont donc supprimées qu'après confirmation du système.
+  window.onNativePdfSaved = function(){
+    if(!pdfFlowStarted) return;
+    window.confirmPdfSavedAndPurgeV67();
+  };
+
+  window.onNativePdfSaveCancelled = function(){
+    if(!pdfFlowStarted) return;
+    window.cancelPdfExportKeepSignaturesV67();
+  };
+
+  window.onNativePdfError = function(message){
+    if(!pdfFlowStarted) return;
+    pdfFlowStarted = false;
+    toast(message || "Export PDF impossible : les signatures sont conservées.");
+  };
+
   function printWithPostFinalisation(){
     hide("actionsOverlay");
     hide("confirmOverlay");
@@ -7703,6 +7736,16 @@ window.updateLamBriefing=function(){let target=document.getElementById("oMiseVoi
     }catch(e){}
 
     setTimeout(()=>{
+      // La PWA crée un fichier PDF local : aucun APK ni droit d'installation
+      // Android n'est nécessaire.
+      if(window.BriefingPwaPdf && typeof window.BriefingPwaPdf.savePdf === "function"){
+        window.BriefingPwaPdf.savePdf()
+          .then(showFinalisationOnReturn)
+          .catch(function(error){
+            toast("Export PDF impossible : " + (error && error.message ? error.message : "erreur inconnue"));
+          });
+        return;
+      }
       try{ window.print(); }catch(e){ showFinalisationOnReturn(); }
     },250);
 
@@ -7889,6 +7932,9 @@ window.updateLamBriefing=function(){let target=document.getElementById("oMiseVoi
   };
 
   window.shareBriefingWhatsApp = async function(){
+    if(window.BriefingPwaPdf && typeof window.BriefingPwaPdf.sharePdf === 'function'){
+      return window.BriefingPwaPdf.sharePdf();
+    }
     updateMetaDisplays();
     if(typeof generate === 'function') generate();
     const m = getBriefingMeta();
@@ -7944,14 +7990,305 @@ window.updateLamBriefing=function(){let target=document.getElementById("oMiseVoi
 
 
 
-<!-- PWA - installation Android -->
-<script id="pwa-install-script">
+<!-- PWA PRO - PDF local et partage Android -->
+<script id="pwa-pdf-local">
 (function(){
-  if('serviceWorker' in navigator){
-    window.addEventListener('load', function(){
-      navigator.serviceWorker.register('./service-worker.js').catch(function(e){ console.log('Service worker non enregistré', e); });
+  const EXPORT_KEY = "briefing_pwa_last_pdf_export_v1";
+  let exportInProgress = false;
+
+  function byId(id){ return document.getElementById(id); }
+
+  function notify(message){
+    if(typeof window.showToast === "function"){
+      window.showToast(message);
+      return;
+    }
+    const status = byId("presenceStatus");
+    if(status) status.textContent = message;
+    else window.alert(message);
+  }
+
+  function setBusy(active, message){
+    let overlay = byId("pwaPdfBusy");
+    if(!overlay){
+      const style = document.createElement("style");
+      style.textContent =
+        "#pwaPdfBusy{position:fixed;inset:0;z-index:2147483647;background:rgba(8,18,32,.82);color:#fff;display:none;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:Arial,sans-serif;}" +
+        "#pwaPdfBusy.active{display:flex;}" +
+        "#pwaPdfBusy div{max-width:330px;background:#fff;color:#162231;border-radius:16px;padding:24px;font-size:18px;font-weight:700;box-shadow:0 10px 35px rgba(0,0,0,.35);}" +
+        "#pwaPdfBusy small{display:block;margin-top:10px;color:#53606d;font-size:13px;font-weight:400;}";
+      document.head.appendChild(style);
+      overlay = document.createElement("div");
+      overlay.id = "pwaPdfBusy";
+      overlay.innerHTML = "<div><span></span><small>La mise en page et les signatures sont conservées.</small></div>";
+      document.body.appendChild(overlay);
+    }
+    overlay.querySelector("span").textContent = message || "Génération du PDF en cours…";
+    overlay.classList.toggle("active", !!active);
+  }
+
+  function hideActionPopups(){
+    ["actionsOverlay","confirmOverlay","resetOverlay","pdfFinalisationOverlayV67"].forEach(function(id){
+      const element = byId(id);
+      if(element) element.style.display = "none";
     });
   }
+
+  function prepareData(){
+    hideActionPopups();
+    try{ if(typeof window.generate === "function") window.generate(); }catch(error){}
+    try{ if(typeof window.presenceSave === "function") window.presenceSave(); }catch(error){}
+    try{ if(typeof window.presenceRender === "function") window.presenceRender(); }catch(error){}
+  }
+
+  function printableClone(source){
+    const clone = source.cloneNode(true);
+    clone.querySelectorAll(
+      ".no-print,button,#floatingActionsBtn,#actionsOverlay,#confirmOverlay,#resetOverlay,#presencePopup,#resignListOverlay,#startupPopup,#pdfFinalisationOverlayV67"
+    ).forEach(function(element){ element.remove(); });
+    clone.style.display = "block";
+    clone.style.visibility = "visible";
+    clone.style.maxWidth = "930px";
+    clone.style.width = "930px";
+    clone.style.margin = "0";
+    clone.style.boxShadow = "none";
+    clone.style.borderRadius = "0";
+    return clone;
+  }
+
+  async function capture(source){
+    const stage = document.createElement("div");
+    stage.style.cssText =
+      "position:fixed;left:0;top:0;width:930px;background:#fff;color:#111;z-index:2147483646;" +
+      "pointer-events:none;overflow:visible;box-sizing:border-box;";
+    stage.appendChild(printableClone(source));
+    document.body.appendChild(stage);
+
+    try{
+      if(document.fonts && document.fonts.ready) await document.fonts.ready;
+      await new Promise(function(resolve){ setTimeout(resolve, 100); });
+      return await window.html2canvas(stage, {
+        backgroundColor: "#ffffff",
+        scale: Math.min(2, Math.max(1, window.devicePixelRatio || 1)),
+        useCORS: true,
+        logging: false,
+        windowWidth: 1200,
+        scrollX: 0,
+        scrollY: 0
+      });
+    } finally {
+      stage.remove();
+    }
+  }
+
+  function sanitize(value){
+    return String(value || "briefing")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[\\/:*?"<>|]+/g, "_")
+      .replace(/\s+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 80) || "briefing";
+  }
+
+  function meta(){
+    return {
+      chantier: byId("chantier") ? byId("chantier").value : "chantier",
+      entreprise: byId("entrepriseChantier") ? byId("entrepriseChantier").value : "entreprise",
+      date: byId("date") && byId("date").value ? byId("date").value : new Date().toISOString().slice(0,10),
+      horaire: byId("horaire") ? byId("horaire").value : ""
+    };
+  }
+
+  function filename(data){
+    return "Briefing_" + sanitize(data.date) + "_" + sanitize(data.chantier) + ".pdf";
+  }
+
+  function appendCanvas(pdf, canvas, hasPage){
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const margin = 6;
+    const printableWidth = pageWidth - (margin * 2);
+    const printableHeight = pageHeight - (margin * 2);
+    const pixelsPerMm = canvas.width / printableWidth;
+    const sliceHeight = Math.max(1, Math.floor(printableHeight * pixelsPerMm));
+    let offset = 0;
+
+    while(offset < canvas.height){
+      const height = Math.min(sliceHeight, canvas.height - offset);
+      const slice = document.createElement("canvas");
+      slice.width = canvas.width;
+      slice.height = height;
+      const context = slice.getContext("2d", {alpha:false});
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, slice.width, slice.height);
+      context.drawImage(canvas, 0, offset, canvas.width, height, 0, 0, slice.width, slice.height);
+
+      if(hasPage) pdf.addPage();
+      const heightMm = height / pixelsPerMm;
+      pdf.addImage(slice.toDataURL("image/jpeg", 0.92), "JPEG", margin, margin, printableWidth, heightMm, undefined, "FAST");
+      hasPage = true;
+      offset += height;
+    }
+
+    return hasPage;
+  }
+
+  function recordExport(type, data){
+    try{
+      localStorage.setItem(EXPORT_KEY, JSON.stringify({
+        type: type,
+        filename: data.filename,
+        chantier: data.meta.chantier,
+        date: data.meta.date,
+        createdAt: new Date().toISOString()
+      }));
+    }catch(error){}
+  }
+
+  function queueDownload(blob, name){
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 5000);
+  }
+
+  function offerSignaturePurge(){
+    const overlay = byId("pdfFinalisationOverlayV67");
+    if(overlay) overlay.style.display = "flex";
+  }
+
+  async function createPdf(){
+    if(exportInProgress) throw new Error("Un export est déjà en cours.");
+    if(!window.html2canvas || !window.jspdf || !window.jspdf.jsPDF){
+      throw new Error("Le module PDF local n’est pas disponible.");
+    }
+    if(location.protocol !== "https:" && location.hostname !== "localhost"){
+      throw new Error("Ouvre l’application depuis son adresse HTTPS pour générer et partager le PDF.");
+    }
+
+    exportInProgress = true;
+    setBusy(true, "Génération du PDF en cours…");
+    try{
+      prepareData();
+      const mainSheet = document.querySelector(".preview .sheet") || document.querySelector(".sheet");
+      const signatureSheet = byId("signatureSheet");
+      const sources = [];
+      if(mainSheet) sources.push(mainSheet);
+      if(signatureSheet && signatureSheet !== mainSheet) sources.push(signatureSheet);
+      if(!sources.length) throw new Error("Le briefing à exporter est introuvable.");
+
+      const PDF = window.jspdf.jsPDF;
+      const pdf = new PDF({orientation:"p", unit:"mm", format:"a4", compress:true});
+      let hasPage = false;
+      for(const source of sources){
+        const canvas = await capture(source);
+        hasPage = appendCanvas(pdf, canvas, hasPage);
+      }
+
+      const currentMeta = meta();
+      return {
+        blob: pdf.output("blob"),
+        filename: filename(currentMeta),
+        meta: currentMeta
+      };
+    } finally {
+      exportInProgress = false;
+      setBusy(false);
+    }
+  }
+
+  async function savePdf(){
+    const data = await createPdf();
+    queueDownload(data.blob, data.filename);
+    recordExport("download", data);
+    notify("PDF généré. Le téléchargement a été lancé dans le téléphone.");
+    return data;
+  }
+
+  async function sharePdf(){
+    const data = await createPdf();
+    const text =
+      "Briefing chantier - " + data.meta.chantier + "\n" +
+      "Entreprise : " + data.meta.entreprise + "\n" +
+      "Date : " + data.meta.date + "\n" +
+      "Horaire : " + data.meta.horaire;
+    const file = new File([data.blob], data.filename, {type:"application/pdf"});
+
+    try{
+      const canShareFile = typeof navigator.share === "function" &&
+        (!navigator.canShare || navigator.canShare({files:[file]}));
+      if(canShareFile){
+        await navigator.share({title:"Briefing chantier", text:text, files:[file]});
+        recordExport("share", data);
+        notify("PDF transmis au partage Android. Choisis WhatsApp dans la liste.");
+        offerSignaturePurge();
+        return true;
+      }
+    }catch(error){
+      if(error && error.name === "AbortError"){
+        notify("Partage annulé : les signatures sont conservées.");
+        return false;
+      }
+      throw error;
+    }
+
+    queueDownload(data.blob, data.filename);
+    recordExport("download-before-share", data);
+    notify("PDF généré dans Téléchargements. Ouvre WhatsApp puis joins ce fichier PDF.");
+    return false;
+  }
+
+  window.BriefingPwaPdf = {
+    createPdf: createPdf,
+    savePdf: savePdf,
+    sharePdf: sharePdf,
+    lastExport: function(){
+      try{ return JSON.parse(localStorage.getItem(EXPORT_KEY) || "null"); }
+      catch(error){ return null; }
+    }
+  };
+})();
+</script>
+<!-- /PWA PRO - PDF local et partage Android -->
+<!-- PWA GitHub Pages : une même adresse, mise à jour sans APK -->
+<script id="pwa-install-script">
+(function(){
+  if(!('serviceWorker' in navigator)) return;
+
+  var refreshing = false;
+
+  function verifierMiseAJour(){
+    navigator.serviceWorker.getRegistration('./service-worker.js')
+      .then(function(registration){
+        if(registration) return registration.update();
+      })
+      .catch(function(e){ console.log('Vérification de mise à jour impossible', e); });
+  }
+
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' })
+      .then(function(registration){
+        return registration.update();
+      })
+      .catch(function(e){ console.log('Service worker non enregistré', e); });
+  });
+
+  navigator.serviceWorker.addEventListener('controllerchange', function(){
+    if(refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
+
+  window.addEventListener('focus', verifierMiseAJour);
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible') verifierMiseAJour();
+  });
 })();
 </script>
 
