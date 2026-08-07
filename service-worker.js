@@ -6,18 +6,15 @@
  * fichiers n'ont pas changé. Les fichiers mis en cache restent disponibles
  * comme secours hors connexion.
  */
-const CACHE_NAME = 'briefing-pwa-pages-v9';
+const CACHE_NAME = 'briefing-pwa-pages-v10';
 const APP_SHELL = [
   './',
   './index.html',
-  './auth-redirect.html',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './vendor/html2canvas.min.js',
-  './vendor/jspdf.umd.min.js',
-  './vendor/msal-browser.min.js',
-  './vendor/msal-redirect-bridge.min.js'
+  './vendor/jspdf.umd.min.js'
 ];
 
 self.addEventListener('install', event => {
