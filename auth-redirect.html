@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Connexion Microsoft</title>
+</head>
+<body>
+  <p>Connexion Microsoft en cours…</p>
+  <script src="vendor/msal-redirect-bridge.min.js"></script>
+  <script>
+    (async function(){
+      try{
+        await window.msalRedirectBridge.broadcastResponseToMainFrame();
+      }catch(error){
+        document.body.textContent = "La réponse Microsoft n’a pas pu être traitée. Retourne dans l’application et réessaie.";
+      }
+    })();
+  </script>
+</body>
+</html>
